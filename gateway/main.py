@@ -9,7 +9,12 @@ ser = serial.Serial(PORT, BAUDRATE, timeout=1)
 print(f"Successfully opened serial port {PORT} at {BAUDRATE} baud.")
 time.sleep(2)
 
-def send_message_to_serial(message):
+def send_message_to_serial(message: str):
+    message = message.lower()
+    message = 'l' if message == 'left' else 'r' if message == 'right' else message
+    if message not in ['l', 'r']:
+        print("Invalid input. Only pass in direction 'l' or 'r'")
+        return
     try:
         ser.write(message.encode('utf-8'))
         print(f"Sent: '{message}'")
@@ -22,19 +27,16 @@ def send_message_to_serial(message):
     except serial.SerialException as e:
         print(f"Error: Could not open or communicate with serial port {PORT}.")
         print(f"Details: {e}")
-        print("Please ensure:")
-        print("1. The correct port name is used.")
-        print("2. The device is connected and powered on.")
-        print("3. No other program is using the serial port.")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
-    finally:
-        # Always close the serial port when done
-        if 'ser' in locals() and ser.is_open:
-            ser.close()
-            print(f"Serial port {PORT} closed.")
 
 if __name__ == "__main__":
     while True:
         user_input = input("Enter your message: ")
+        if user_input.lower() == 'q':
+            break;
         send_message_to_serial(user_input)
+        
+    if 'ser' in locals() and ser.is_open:
+        ser.close()
+        print(f"Serial port {PORT} closed.")

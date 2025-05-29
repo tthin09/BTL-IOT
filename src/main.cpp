@@ -7,9 +7,31 @@
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
 #include <OneButton.h>
+#include <Wifi.h>
+#include <ThingsBoard.h>
+#include <Arduino_MQTT_Client.h>
 #include "servo.h"
 #include "utils.h"
 
+//=====================================
+
+// Wifi config
+constexpr char WIFI_SSID[] = "ACLAB";
+constexpr char WIFI_PASSWORD[] = "ACLAB2023";
+
+// Thingsboard setup
+constexpr char TOKEN[] = "crr1n3ilqu162iug4e9h";
+constexpr char THINGSBOARD_SERVER[] = "app.coreiot.io";
+constexpr uint16_t THINGSBOARD_PORT = 1883U;
+
+constexpr uint32_t MAX_MESSAGE_SIZE = 1024U;
+
+// Objects
+WiFiClient wifiClient;
+Arduino_MQTT_Client mqttClient(wifiClient);
+ThingsBoard tb(mqttClient, MAX_MESSAGE_SIZE);
+
+//=====================================
 
 const int BAUDRATE = 115200;
 
@@ -74,10 +96,8 @@ void serialListenTask(void *pvParameters) {
       Serial.print("Received from serial: ");
       Serial.println(incomingChar); // Print it back to serial
       if (incomingChar == 'l') {
-        strncpy(lastMessage, "Added LEFT\0", 16);
         addTaskLeft();
       } else if (incomingChar == 'r') {
-        strncpy(lastMessage, "Added RIGHT\0", 16);
         addTaskRight();
       } else {
         strncpy(lastMessage, "UNKNOWN\0", 16);
@@ -97,6 +117,72 @@ void lcdUpdate() {
   lcd.setCursor(0, 1);
   lcd.print(lastMessage);
 }
+
+// =============================================================
+void connectWifi() {
+  Serial.print("Wifi SSID: " + String(WIFI_SSID) + ", Wifi password: " + String(WIFI_PASSWORD) + "\n");
+  Serial.print("Connecting to wifi...");
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.print("Status: ");
+    Serial.println(WiFi.status());
+    attempts++;
+  }
+  Serial.println();
+  Serial.println("Connected to wifi!");
+}
+
+void wifiTask(void *pvParameters)
+{
+  connectWifi();
+  while (1)
+  {
+    vTaskDelay(5000);
+    if (WiFi.status() != WL_CONNECTED)
+    {
+      connectWifi();
+    }
+  }
+}
+
+void connectThingsboard() {
+  if (!tb.connected()) {
+    Serial.print("Connecting to: ");
+    Serial.print(THINGSBOARD_SERVER);
+    Serial.print(" with token ");
+    Serial.println(TOKEN);
+    const bool successful = tb.connect(THINGSBOARD_SERVER, TOKEN, THINGSBOARD_PORT);
+    if (!successful) {
+      Serial.println("Failed to connect to ThingsBoard");
+      return;
+    }
+    
+    tb.sendAttributeData("macAddress", WiFi.macAddress().c_str());
+    tb.sendAttributeData("rssi", WiFi.RSSI());
+    tb.sendAttributeData("channel", WiFi.channel());
+    tb.sendAttributeData("bssid", WiFi.BSSIDstr().c_str());
+    tb.sendAttributeData("localIp", WiFi.localIP().toString().c_str());
+    tb.sendAttributeData("ssid", WiFi.SSID().c_str());
+    Serial.println("Subscribe to ThingsBoard done");
+  }
+}
+
+void connectThingsboardTask(void *pvParameters) {
+  while (1) {
+    connectThingsboard();
+    vTaskDelay(5000);
+  }
+}
+
+void thingsboardTask(void *pvParameters) {
+  while (1) {
+    tb.loop();
+    vTaskDelay(10);
+  }
+}
+// =============================================================
 
 void setup() {
   // put your setup code here, to run once:
@@ -123,6 +209,12 @@ void setup() {
   lcd.setCursor(0, 0); // Đặt con trỏ về đầu dòng 0
   lcd.print("System Ready!"); // In thông báo khởi động
 
+  connectWifi();
+  connectThingsboard();
+  
+  xTaskCreate(wifiTask, "Wifi task", 8192, NULL, 1, NULL);
+  xTaskCreate(connectThingsboardTask, "Connect Thingsboard task", 8192, NULL, 1, NULL);
+  xTaskCreate(thingsboardTask, "Thingsboard running task", 8192, NULL, 1, NULL);
   xTaskCreate(ultrasonicTask, "Ultrasonic task", 8192, NULL, 1, NULL);
   xTaskCreate(buttonTask, "Button task", 4096, NULL, 1, NULL);
   xTaskCreate(serialListenTask, "Serial listen task", 8192, NULL, 2, NULL);
@@ -140,6 +232,7 @@ void addTaskLeft() {
     Serial.println("Failed to send task to servo queue");
   } else {
     Serial.println("Added task LEFT successfully");
+    strncpy(lastMessage, "Added LEFT\0", 16);
     printQueueSize(servoTasks);
   }
   lcdUpdate();
@@ -152,6 +245,7 @@ void addTaskRight() {
     Serial.println("Failed to send task to servo queue");
   } else {
     Serial.println("Added task RIGHT successfully");
+    strncpy(lastMessage, "Added RIGHT\0", 16);
     printQueueSize(servoTasks);
   }
   lcdUpdate();
@@ -167,29 +261,37 @@ void triggerServo() {
   }
   switch (task) {
     case LEFT:
-    servoTurn(0);
-    digitalWrite(LED_A, HIGH);
-    digitalWrite(LED_B, LOW);
-    Serial.println("Trigger task LEFT from queue");
-    strncpy(lastMessage, "Triggered LEFT\0", 16);
-    break;
+      servoTurn(0);
+      digitalWrite(LED_A, HIGH);
+      digitalWrite(LED_B, LOW);
+      Serial.println("Trigger task LEFT from queue");
+      strncpy(lastMessage, "Triggered LEFT\0", 16);
+      if (tb.sendTelemetryData("trigger", "LEFT")) {
+        tb.sendTelemetryData("light", 30);
+        Serial.println("Send telemetry LEFT successfully");
+      }
+      break;
     case RIGHT:
-    servoTurn(180);
-    digitalWrite(LED_A, LOW);
-    digitalWrite(LED_B, HIGH);
-    Serial.println("Trigger task RIGHT from queue");
-    strncpy(lastMessage, "Triggered RIGHT\0", 16);
-    break;
-    default:
-    Serial.println("Unknown command");
-    digitalWrite(LED_A, LOW);
-    digitalWrite(LED_B, LOW);
-    break;
+      servoTurn(180);
+      digitalWrite(LED_A, LOW);
+      digitalWrite(LED_B, HIGH);
+      Serial.println("Trigger task RIGHT from queue");
+      strncpy(lastMessage, "Triggered RIGHT\0", 16);
+      if (tb.sendTelemetryData("trigger", "RIGHT")) {
+        tb.sendTelemetryData("light", 30);
+        Serial.println("Send telemetry RIGHT successfully");
+      }
+      break;
+      default:
+      Serial.println("Unknown command");
+      digitalWrite(LED_A, LOW);
+      digitalWrite(LED_B, LOW);
+      break;
+    }
+    printQueueSize(servoTasks);
+    lcdUpdate();
   }
-  printQueueSize(servoTasks);
-  lcdUpdate();
-}
-
+  
 void servoTurn(int direction) {
   Serial.println("Write servo at " + String(direction) + " degrees");
   servo.write(direction);
