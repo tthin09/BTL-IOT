@@ -6,6 +6,7 @@
 #include <Ultrasonic.h>
 #include <OneButton.h>
 #include "servo.h"
+#include "utils.h"
 
 #define SERVO_LEFT = 1
 #define SERVO_RIGHT = 2
@@ -34,6 +35,7 @@ void handleButtonRight();
 const int trigPin = 25;
 const int echoPin = 26;
 Ultrasonic ultrasonic(trigPin, echoPin);
+const int DISTANCE_THRESHOLD = 30; // cm
 
 // Helper function for servo
 void servoTurn(int direction);
@@ -42,9 +44,33 @@ void triggerServo();
 
 void ultrasonicTask(void *pvParameters) {
   while (1) {
-    vTaskDelay(2000);
+    vTaskDelay(10);
     double distance = ultrasonic.read(CM);
-    Serial.println("Ultrasonic distance: " + String(distance) + " cm");
+    if (distance <= DISTANCE_THRESHOLD) {
+      Serial.println("Ultrasonic distance: " + String(distance) + " cm");
+      triggerServo();
+      vTaskDelay(1500);
+    }
+  }
+}
+
+void buttonTask(void *pvParameters) {
+  while (1) {
+    buttonLeft.tick();
+    buttonRight.tick();
+    vTaskDelay(10);
+  }
+}
+
+void serialListenTask(void *pvParameters) {
+  Serial.println("Serial Listen Task started.");
+  while (1) {
+    if (Serial.available()) { // Check if there's any data in the serial buffer
+      char incomingChar = Serial.read(); // Read the incoming character
+      Serial.print("Received from serial: ");
+      Serial.println(incomingChar); // Print it back to serial
+    }
+    vTaskDelay(pdMS_TO_TICKS(10)); // Small delay to yield CPU time
   }
 }
 
@@ -66,13 +92,13 @@ void setup() {
   buttonLeft.attachDoubleClick(triggerServo);
 
   ultrasonic.setTimeout(40000UL);
-  xTaskCreate(ultrasonicTask, "Ultrasonic task", 8092, NULL, 1, NULL);
+  xTaskCreate(ultrasonicTask, "Ultrasonic task", 8192, NULL, 1, NULL);
+  xTaskCreate(buttonTask, "Button task", 4096, NULL, 1, NULL);
+  xTaskCreate(serialListenTask, "Serial listen task", 8192, NULL, 2, NULL);
 }
 
 void loop() {
-  buttonLeft.tick();
-  buttonRight.tick();
-  delay(10);
+  // FreeRTOS handle all tasks
 }
 
 void handleButtonLeft() {
@@ -82,6 +108,7 @@ void handleButtonLeft() {
     Serial.println("Failed to send task to servo queue");
   } else {
     Serial.println("Added task LEFT successfully");
+    printQueueSize(servoTasks);
   }
 }
 
@@ -92,6 +119,7 @@ void handleButtonRight() {
     Serial.println("Failed to send task to servo queue");
   } else {
     Serial.println("Added task RIGHT successfully");
+    printQueueSize(servoTasks);
   }
 }
 
@@ -108,11 +136,13 @@ void triggerServo() {
       servoTurn(0);
       digitalWrite(LED_A, HIGH);
       digitalWrite(LED_B, LOW);
+      Serial.println("Trigger task LEFT from queue");
       break;
     case RIGHT:
       servoTurn(180);
       digitalWrite(LED_A, LOW);
       digitalWrite(LED_B, HIGH);
+      Serial.println("Trigger task RIGHT from queue");
       break;
     default:
       Serial.println("Unknown command");
@@ -120,8 +150,10 @@ void triggerServo() {
       digitalWrite(LED_B, LOW);
       break;
   }
+  printQueueSize(servoTasks);
 }
 
 void servoTurn(int direction) {
+  Serial.println("Write servo at " + String(direction) + " degrees");
   servo.write(direction);
 }
