@@ -4,12 +4,12 @@
 #include <freertos/queue.h>
 #include <ESP32Servo.h>
 #include <Ultrasonic.h>
+#include <LiquidCrystal_I2C.h>
+#include <Wire.h>
 #include <OneButton.h>
 #include "servo.h"
 #include "utils.h"
 
-#define SERVO_LEFT = 1
-#define SERVO_RIGHT = 2
 
 const int BAUDRATE = 115200;
 
@@ -23,19 +23,23 @@ const int servoPin = 27;
 int currentServoDir = 0;
 QueueHandle_t servoTasks;
 
-// button
+// Button
 const int buttonRightPin = 16;
 const int buttonLeftPin = 17;
 OneButton buttonRight(buttonRightPin, true);
 OneButton buttonLeft(buttonLeftPin, true);
-void handleButtonLeft();
-void handleButtonRight();
+void addTaskLeft();
+void addTaskRight();
 
 // Ultrasonic sensor
 const int trigPin = 25;
 const int echoPin = 26;
 Ultrasonic ultrasonic(trigPin, echoPin);
 const int DISTANCE_THRESHOLD = 30; // cm
+
+// LCD monitor
+LiquidCrystal_I2C lcd(0x21, 16, 2);
+char lastMessage[17];
 
 // Helper function for servo
 void servoTurn(int direction);
@@ -69,39 +73,67 @@ void serialListenTask(void *pvParameters) {
       char incomingChar = Serial.read(); // Read the incoming character
       Serial.print("Received from serial: ");
       Serial.println(incomingChar); // Print it back to serial
+      if (incomingChar == 'l') {
+        strncpy(lastMessage, "Added LEFT\0", 16);
+        addTaskLeft();
+      } else if (incomingChar == 'r') {
+        strncpy(lastMessage, "Added RIGHT\0", 16);
+        addTaskRight();
+      } else {
+        strncpy(lastMessage, "UNKNOWN\0", 16);
+      }
     }
     vTaskDelay(pdMS_TO_TICKS(10)); // Small delay to yield CPU time
   }
 }
 
+void lcdUpdate() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Queue size: ");
+  lcd.setCursor(12, 0);
+  lcd.print(uxQueueMessagesWaiting(servoTasks));
+
+  lcd.setCursor(0, 1);
+  lcd.print(lastMessage);
+}
 
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(BAUDRATE);
   pinMode(LED_A, OUTPUT);
   pinMode(LED_B, OUTPUT);
-
+  digitalWrite(LED_A, LOW);
+  digitalWrite(LED_B, LOW);
+  
   servoTasks = xQueueCreate(40, sizeof(ServoTaskType));
   servo.attach(servoPin);
   servo.write(0);
-  digitalWrite(LED_A, LOW);
-  digitalWrite(LED_B, LOW);
-
-  buttonLeft.attachClick(handleButtonLeft);
-  buttonRight.attachClick(handleButtonRight);
+  
+  buttonLeft.attachClick(addTaskLeft);
+  buttonRight.attachClick(addTaskRight);
   buttonLeft.attachDoubleClick(triggerServo);
-
+  
   ultrasonic.setTimeout(40000UL);
+  
+  Wire.begin();
+  lcd.init();
+  lcd.clear();
+  lcd.backlight();
+  lcd.setCursor(0, 0); // Đặt con trỏ về đầu dòng 0
+  lcd.print("System Ready!"); // In thông báo khởi động
+
   xTaskCreate(ultrasonicTask, "Ultrasonic task", 8192, NULL, 1, NULL);
   xTaskCreate(buttonTask, "Button task", 4096, NULL, 1, NULL);
   xTaskCreate(serialListenTask, "Serial listen task", 8192, NULL, 2, NULL);
 }
 
-void loop() {
-  // FreeRTOS handle all tasks
-}
 
-void handleButtonLeft() {
+// =======================================================
+// HELPER FUNCTIONS
+// ========================================================
+
+void addTaskLeft() {
   ServoTaskType task = LEFT;
   int result = xQueueSend(servoTasks, &task, 0);
   if (result != pdPASS) {
@@ -110,9 +142,10 @@ void handleButtonLeft() {
     Serial.println("Added task LEFT successfully");
     printQueueSize(servoTasks);
   }
+  lcdUpdate();
 }
 
-void handleButtonRight() {
+void addTaskRight() {
   ServoTaskType task = RIGHT;
   int result = xQueueSend(servoTasks, &task, 0);
   if (result != pdPASS) {
@@ -121,6 +154,7 @@ void handleButtonRight() {
     Serial.println("Added task RIGHT successfully");
     printQueueSize(servoTasks);
   }
+  lcdUpdate();
 }
 
 // this function will be called when the button started long pressed.
@@ -133,27 +167,34 @@ void triggerServo() {
   }
   switch (task) {
     case LEFT:
-      servoTurn(0);
-      digitalWrite(LED_A, HIGH);
-      digitalWrite(LED_B, LOW);
-      Serial.println("Trigger task LEFT from queue");
-      break;
+    servoTurn(0);
+    digitalWrite(LED_A, HIGH);
+    digitalWrite(LED_B, LOW);
+    Serial.println("Trigger task LEFT from queue");
+    strncpy(lastMessage, "Triggered LEFT\0", 16);
+    break;
     case RIGHT:
-      servoTurn(180);
-      digitalWrite(LED_A, LOW);
-      digitalWrite(LED_B, HIGH);
-      Serial.println("Trigger task RIGHT from queue");
-      break;
+    servoTurn(180);
+    digitalWrite(LED_A, LOW);
+    digitalWrite(LED_B, HIGH);
+    Serial.println("Trigger task RIGHT from queue");
+    strncpy(lastMessage, "Triggered RIGHT\0", 16);
+    break;
     default:
-      Serial.println("Unknown command");
-      digitalWrite(LED_A, LOW);
-      digitalWrite(LED_B, LOW);
-      break;
+    Serial.println("Unknown command");
+    digitalWrite(LED_A, LOW);
+    digitalWrite(LED_B, LOW);
+    break;
   }
   printQueueSize(servoTasks);
+  lcdUpdate();
 }
 
 void servoTurn(int direction) {
   Serial.println("Write servo at " + String(direction) + " degrees");
   servo.write(direction);
+}
+
+void loop() {
+  // FreeRTOS handle all tasks
 }
