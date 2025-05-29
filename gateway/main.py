@@ -50,7 +50,7 @@ def get_prediction(image_path: str) -> str:
     else:
         return "UNKNOWN"
     
-def send_message_to_serial(message: str) -> None:
+def send_message_to_serial(message: str) -> bool:
     lib = {"LEFT": "l",
            "RIGHT": "r",
            "UNKNOWN": "u"}
@@ -63,12 +63,15 @@ def send_message_to_serial(message: str) -> None:
         if ser.in_waiting > 0:
             received_data = ser.read(ser.in_waiting).decode('utf-8')
             print(f"Received: '{received_data.strip()}'") # .strip() to remove potential newline characters
+            return True
 
     except serial.SerialException as e:
         print(f"Error: Could not open or communicate with serial port {PORT}.")
         print(f"Details: {e}")
+        return False
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
+        return False
         
 
 if __name__ == "__main__":
@@ -76,7 +79,7 @@ if __name__ == "__main__":
     while running:
         image_path = capture_image()
         prediction_result = get_prediction(image_path)
-        send_message_to_serial(prediction_result)
+        result = send_message_to_serial(prediction_result)
         
         start_time = time.time()
         while (time.time() - start_time) < DELAY:
