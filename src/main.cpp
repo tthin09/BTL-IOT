@@ -261,7 +261,8 @@ void triggerServo() {
   }
   switch (task) {
     case LEFT:
-      servoTurn(0);
+      int left_degree = 180;
+      servoTurn(left_degree);
       digitalWrite(LED_A, HIGH);
       digitalWrite(LED_B, LOW);
       Serial.println("Trigger task LEFT from queue");
@@ -272,7 +273,8 @@ void triggerServo() {
       }
       break;
     case RIGHT:
-      servoTurn(180);
+      int right_degree = 0;
+      servoTurn(right_degree);
       digitalWrite(LED_A, LOW);
       digitalWrite(LED_B, HIGH);
       Serial.println("Trigger task RIGHT from queue");
