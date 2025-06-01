@@ -44,19 +44,15 @@ client.loop_start()
 client.on_subscribe = subscribed
 client.on_message = recv_message
 
-temp = 30
-humidity = 50
-light_intesity = 100
 counter = 0
 
-
 while True:
-    print(f"Temperature: {temp:.2f} *C, Humidity: {humidity:.2f}%")
-    collect_data = {'temperature': temp, 'humidity': humidity}
+    result = "inorganic" if counter == 0 else "organic"
+    print(f"wasteType: {result}")
+    collect_data = {"wasteType": result}
     info = client.publish('v1/devices/me/telemetry', json.dumps(collect_data), 1)
     rc, message_id = info
     print(f"rc: {rc}, message_id: {message_id}")
 
-    temp += 1
-    humidity += 1
+    counter = counter + 1 if counter < 3 else 0
     time.sleep(3)
