@@ -1,5 +1,0 @@
-#ifndef THINGSBOARD_CONFIG_H
-#define THINGSBOARD_CONFIG_H
-
-
-#endif
