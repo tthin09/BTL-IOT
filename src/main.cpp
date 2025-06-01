@@ -2,7 +2,6 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
-#include <ESP32Servo.h>
 #include <Ultrasonic.h>
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
@@ -19,12 +18,6 @@ const int BAUDRATE = 115200;
 const int LED_A = 18;
 const int LED_B = 19;
 
-// Servo
-Servo servo;
-const int servoPin = 27;
-int currentServoDirection = 0;
-QueueHandle_t servoTasks;
-
 // Button
 const int buttonRightPin = 16;
 const int buttonLeftPin = 17;
@@ -32,9 +25,12 @@ OneButton buttonRight(buttonRightPin, true);
 OneButton buttonLeft(buttonLeftPin, true);
 
 // Ultrasonic sensor
-const int trigPin = 25;
-const int echoPin = 26;
-Ultrasonic ultrasonic(trigPin, echoPin);
+const int entrySensorTrigPin = 32;
+const int entrySensorEchoPin = 33;
+const int exitSensorTrigPin = 25;
+const int exitSensorEchoPin = 26;
+Ultrasonic entrySensor(entrySensorTrigPin, entrySensorEchoPin);
+Ultrasonic exitSensor(exitSensorTrigPin, exitSensorEchoPin);
 const int DISTANCE_THRESHOLD = 30; // cm
 
 // LCD monitor
@@ -44,12 +40,43 @@ char lastMessage[17];
 // Servo
 QueueHandle_t servoTasks;
 
-void ultrasonicTask(void *pvParameters) {
+// HELPER FUNCTION DECLARE
+void lcdUpdate();
+void stopConveyorBelt();
+void continueConveyorBelt();
+
+// =============================================================
+
+void entrySensorTask(void *pvParameters) {
   while (1) {
     vTaskDelay(10);
-    double distance = ultrasonic.read(CM);
+    double distance = entrySensor.read(CM);
+    if (distance <= DISTANCE_THRESHOLD) {
+      Serial.println("New waste detected!");
+      strncpy(lastMessage, "Waste detected\0", 16);
+      lcdUpdate();
+      vTaskDelay(1000);
+    }
+  }
+}
+
+void exitSensorTask(void *pvParameters) {
+  while (1) {
+    vTaskDelay(10);
+    double distance = exitSensor.read(CM);
     if (distance <= DISTANCE_THRESHOLD) {
       Serial.println("Ultrasonic distance: " + String(distance) + " cm");
+      if (uxQueueMessagesWaiting(servoTasks) <= 0) {
+        Serial.println("Waste came to exit point but no tasks is in queue. Waiting...");
+        strncpy(lastMessage, "Wait for task...\0", 16);
+        lcdUpdate();
+        stopConveyorBelt();
+        while (uxQueueMessagesWaiting(servoTasks) <= 0) {
+          vTaskDelay(1000);
+        }
+        Serial.println("Found new task to exit!");
+        continueConveyorBelt();
+      }
       ServoTaskType task;
       int result = xQueueReceive(servoTasks, &task, 0);
       if (result != pdPASS) {
@@ -111,20 +138,6 @@ void serialListenTask(void *pvParameters) {
   }
 }
 
-void lcdUpdate() {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Queue size: ");
-  lcd.setCursor(12, 0);
-  lcd.print(uxQueueMessagesWaiting(servoTasks));
-
-  lcd.setCursor(0, 1);
-  lcd.print(lastMessage);
-}
-
-// =============================================================
-
-
 void wifiTask(void *pvParameters)
 {
   connectWifi();
@@ -151,6 +164,7 @@ void thingsboardTask(void *pvParameters) {
     vTaskDelay(10);
   }
 }
+
 // =============================================================
 
 void setup() {
@@ -165,7 +179,8 @@ void setup() {
   servo.attach(servoPin);
   servo.write(0);
   
-  ultrasonic.setTimeout(40000UL);
+  entrySensor.setTimeout(40000UL);
+  exitSensor.setTimeout(40000UL);
   
   Wire.begin();
   lcd.init();
@@ -174,17 +189,43 @@ void setup() {
   lcd.setCursor(0, 0);
   lcd.print("System Ready!");
 
-  connectWifi();
-  connectThingsboard();
+  // connectWifi();
+  // connectThingsboard();
   
-  xTaskCreate(wifiTask, "Wifi task", 8192, NULL, 1, NULL);
-  xTaskCreate(connectThingsboardTask, "Connect Thingsboard task", 8192, NULL, 1, NULL);
-  xTaskCreate(thingsboardTask, "Thingsboard running task", 8192, NULL, 1, NULL);
-  xTaskCreate(ultrasonicTask, "Ultrasonic sensor task", 8192, NULL, 1, NULL);
+  // xTaskCreate(wifiTask, "Wifi task", 8192, NULL, 1, NULL);
+  // xTaskCreate(connectThingsboardTask, "Connect Thingsboard task", 8192, NULL, 1, NULL);
+  // xTaskCreate(thingsboardTask, "Thingsboard running task", 8192, NULL, 1, NULL);
+  xTaskCreate(entrySensorTask, "Entry sensor task", 4096, NULL, 1, NULL);
+  xTaskCreate(exitSensorTask, "Exit sensor task", 4096, NULL, 1, NULL);
   xTaskCreate(buttonTask, "Button task", 4096, NULL, 1, NULL);
   xTaskCreate(serialListenTask, "Serial listen task", 8192, NULL, 2, NULL);
+  continueConveyorBelt();
 }
 
+// =============================================================
+
+void lcdUpdate() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Queue size: ");
+  lcd.setCursor(12, 0);
+  lcd.print(uxQueueMessagesWaiting(servoTasks));
+  
+  lcd.setCursor(0, 1);
+  lcd.print(lastMessage);
+}
+
+void stopConveyorBelt() {
+  digitalWrite(LED_A, HIGH);
+  digitalWrite(LED_B, HIGH);
+}
+
+void continueConveyorBelt() {
+  digitalWrite(LED_A, LOW);
+  digitalWrite(LED_B, LOW);
+}
+
+// =============================================================
 
 void loop() {
   // FreeRTOS handle all tasks

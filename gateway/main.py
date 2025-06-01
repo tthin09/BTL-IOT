@@ -5,9 +5,13 @@ import os
 from dotenv import load_dotenv
 import serial
 from utils import *
+from log_data.log_data import log_data_to_csv
 
 import paho.mqtt.client as mqttclient
 import json
+
+# Log model Execution time
+DATA_FILEPATH = "log_data/execution_time.csv"
 
 # Serial settings
 ser = serial.Serial(PORT, BAUDRATE, timeout=1)
@@ -18,6 +22,7 @@ if not os.path.exists(OUTPUT_FOLDER):
     os.makedirs(OUTPUT_FOLDER)
     print(f"Created folder: {OUTPUT_FOLDER}")
 
+print("Opening webcam...")
 cap = cv2.VideoCapture(0)
 if not cap.isOpened():
     print("Error: Could not open webcam. Please ensure it's connected and not in use.")
@@ -47,20 +52,15 @@ def get_prediction(image_path: str) -> str:
     result = CLIENT.infer(image_path, model_id=os.getenv("ROBOFLOW_MODEL_ID"))
     return result["top"]
     
-def send_message_to_serial(message: str) -> bool:
+def send_message_to_serial(wasteType: str) -> bool:
     lib = {"organic": "l",
            "inorganic": "r",
            "UNKNOWN": "u"}
-    message = lib[message]
+    message = lib[wasteType]
     try:
         ser.write(message.encode('utf-8'))
         print(f"Sent: '{message}'")
-
-        time.sleep(0.1) # Give the ESP32 a moment to respond
-        if ser.in_waiting > 0:
-            received_data = ser.read(ser.in_waiting).decode('utf-8')
-            print(f"Received: '{received_data.strip()}'") # .strip() to remove potential newline characters
-            return True
+        return True
 
     except serial.SerialException as e:
         print(f"Error: Could not open or communicate with serial port {PORT}.")
@@ -117,25 +117,37 @@ if __name__ == "__main__":
     print("Press 'q' to quit the capture process.")
     running = True
     while running:
-        print("\nCapturing image...")
-        image_path = capture_image()
-        prediction_result = get_prediction(image_path)
-        result = send_message_to_serial(prediction_result)
-        
-        data = {"wasteType": result}
-        client.publish('v1/devices/me/telemetry', json.dumps(data), 1)
-        print(f"Time: {datetime.datetime.now()}, Waste type: {result}")
-        
-        start_time = time.time()
-        while (time.time() - start_time) < DELAY:
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                print("'q' pressed. Exiting capture process.")
-                running = False
-                break
-            elif cv2.waitKey(1) & 0xFF == ord(' '):
-                break
-            time.sleep(0.1)
-    
+        if ser.in_waiting > 0:
+            received_data = ser.read(ser.in_waiting).decode('utf-8').strip()
+            if received_data == "New waste detected!":
+                print("\nCapturing image...")
+                start_time = time.time()
+                image_path = capture_image()
+                capture_time = time.time() - start_time
+                
+                start_time = time.time()
+                wasteType = get_prediction(image_path)
+                call_model_time = time.time() - start_time
+                
+                start_time = time.time()
+                response = send_message_to_serial(wasteType)
+                send_serial_time = time.time() - start_time
+                log_data_to_csv(DATA_FILEPATH, capture_time, call_model_time, send_serial_time)
+                
+                print(f"Result: {wasteType}")
+                data = {"wasteType": wasteType}
+                client.publish('v1/devices/me/telemetry', json.dumps(data), 1)
+                print(f"Time: {datetime.datetime.now()}, Waste type: {wasteType}")
+            
+            
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            print("'q' pressed. Exiting capture process.")
+            running = False
+            break
+        elif cv2.waitKey(1) & 0xFF == ord(' '):
+            break
+        time.sleep(0.1)
+
     cap.release()
     cv2.destroyAllWindows()
     print("Webcam released and windows closed.")

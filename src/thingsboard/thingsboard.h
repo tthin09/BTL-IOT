@@ -18,11 +18,11 @@ constexpr uint16_t THINGSBOARD_PORT = 1883U;
 constexpr uint32_t MAX_MESSAGE_SIZE = 1024U;
 
 // Objects
-WiFiClient wifiClient;
-Arduino_MQTT_Client mqttClient(wifiClient);
-ThingsBoard tb(mqttClient, MAX_MESSAGE_SIZE);
+extern WiFiClient wifiClient;
+extern Arduino_MQTT_Client mqttClient;
+extern ThingsBoard tb;
 
 void connectThingsboard();
 void connectWifi();
 
-#endif
+#endif // THINGSBOARD_H

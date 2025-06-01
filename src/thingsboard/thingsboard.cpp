@@ -1,5 +1,9 @@
 #include "thingsboard.h"
 
+WiFiClient wifiClient;
+Arduino_MQTT_Client mqttClient(wifiClient);
+ThingsBoard tb(mqttClient, MAX_MESSAGE_SIZE);
+
 void connectWifi() {
   Serial.print("Wifi SSID: " + String(WIFI_SSID) + ", Wifi password: " + String(WIFI_PASSWORD) + "\n");
   Serial.print("Connecting to wifi...");

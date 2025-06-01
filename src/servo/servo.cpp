@@ -1,5 +1,9 @@
 #include "servo.h"
 
+Servo servo;
+const int servoPin = 27;
+int currentServoDirection = 0;
+
 void servoTurn(int direction) {
   Serial.println("Write servo at " + String(direction) + " degrees");
   servo.write(direction);
@@ -26,17 +30,13 @@ void addTaskRight(QueueHandle_t& queue) {
 }
 
 void triggerServo(ServoTaskType task) {
-  switch (task) {
-    case LEFT:
-      int left_degree = 180;
-      servoTurn(left_degree);
-      break;
-    case RIGHT:
-      int right_degree = 0;
-      servoTurn(right_degree);
-      break;
-    default:
-      Serial.println("Unknown task to trigger servo");
-      break;
+  if (task == LEFT) {
+    int left_degree = 180;
+    servoTurn(left_degree);
+  } else if (task == RIGHT) {
+    int right_degree = 0;
+    servoTurn(right_degree);
+  } else {
+    Serial.println("Unknown task to trigger servo");
   }
 }

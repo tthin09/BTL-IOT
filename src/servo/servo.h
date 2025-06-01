@@ -9,13 +9,13 @@ enum ServoTaskType {
     RIGHT
 };
 
-Servo servo;
-const int servoPin = 27;
-int currentServoDirection = 0;
+extern Servo servo;
+extern const int servoPin;
+extern int currentServoDirection;
 
 void servoTurn(int direction);
 void addTaskLeft(QueueHandle_t& queue);
 void addTaskRight(QueueHandle_t& queue);
 void triggerServo(ServoTaskType task);
 
-#endif
+#endif // SERVO_TASKS_H
