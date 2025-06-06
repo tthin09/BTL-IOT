@@ -6,16 +6,28 @@ from dotenv import load_dotenv
 import serial
 from utils import *
 from log_data.log_data import log_data_to_csv
+import pandas as pd
+import random
 
 import paho.mqtt.client as mqttclient
 import json
 
+BROKER_ADDRESS = "app.coreiot.io"
+BROKER_PORT = 1883
+ACCESS_TOKEN = "ctn25wq8yimsvo1ytdwq"
+ACCESS_USERNAME = "ecosort"
+CLIENT_ID = "EcoSort_v1"
+
 # Log model Execution time
 DATA_FILEPATH = "log_data/execution_time.csv"
+CAMERA_INDEX = 0
 
 # Serial settings
-ser = serial.Serial(PORT, BAUDRATE, timeout=1)
-print(f"Successfully opened serial port {PORT} at {BAUDRATE} baud.")
+try:
+    ser = serial.Serial(PORT, BAUDRATE, timeout=1)
+    print(f"Successfully opened serial port {PORT} at {BAUDRATE} baud.")
+except Exception as e:
+    print(e)
 
 # Create the output folder if it doesn't exist
 if not os.path.exists(OUTPUT_FOLDER):
@@ -23,7 +35,7 @@ if not os.path.exists(OUTPUT_FOLDER):
     print(f"Created folder: {OUTPUT_FOLDER}")
 
 print("Opening webcam...")
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(CAMERA_INDEX)
 if not cap.isOpened():
     print("Error: Could not open webcam. Please ensure it's connected and not in use.")
 
@@ -73,12 +85,6 @@ def send_message_to_serial(wasteType: str) -> bool:
 # ============================================================
 # ThingsBoard
 # ============================================================
-
-BROKER_ADDRESS = "app.coreiot.io"
-BROKER_PORT = 1883
-ACCESS_TOKEN = "ctn25wq8yimsvo1ytdwq"
-ACCESS_USERNAME = "ecosort"
-CLIENT_ID = "EcoSort_v1"
 
 def subscribed(client, userdata, mid, granted_qos):
     print("Subscribed...")

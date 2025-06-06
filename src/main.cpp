@@ -189,16 +189,10 @@ void setup() {
   lcd.setCursor(0, 0);
   lcd.print("System Ready!");
 
-  // connectWifi();
-  // connectThingsboard();
-  
-  // xTaskCreate(wifiTask, "Wifi task", 8192, NULL, 1, NULL);
-  // xTaskCreate(connectThingsboardTask, "Connect Thingsboard task", 8192, NULL, 1, NULL);
-  // xTaskCreate(thingsboardTask, "Thingsboard running task", 8192, NULL, 1, NULL);
   xTaskCreate(entrySensorTask, "Entry sensor task", 4096, NULL, 1, NULL);
   xTaskCreate(exitSensorTask, "Exit sensor task", 4096, NULL, 1, NULL);
-  xTaskCreate(buttonTask, "Button task", 4096, NULL, 1, NULL);
   xTaskCreate(serialListenTask, "Serial listen task", 8192, NULL, 2, NULL);
+
   continueConveyorBelt();
 }
 
